@@ -138,16 +138,24 @@ async function withInstallRelay<T>(callback: (url: string) => Promise<T>) {
 
 function makeCodexStateDb(rows: Array<{ id: string; title: string }>) {
   const dbPath = path.join(mkdtempSync(path.join(os.tmpdir(), "imessage-handoff-state-db-")), "state_5.sqlite");
-  const create = spawnSync("sqlite3", [dbPath, "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL);"], { encoding: "utf8" });
+  const create = runSqlite(dbPath, "CREATE TABLE threads (id TEXT PRIMARY KEY, title TEXT NOT NULL);");
   assert.equal(create.status, 0, create.stderr);
   for (const row of rows) {
-    const insert = spawnSync("sqlite3", [
-      dbPath,
-      "INSERT INTO threads (id, title) VALUES (" + sqlString(row.id) + ", " + sqlString(row.title) + ");",
-    ], { encoding: "utf8" });
+    const insert = runSqlite(dbPath, "INSERT INTO threads (id, title) VALUES (" + sqlString(row.id) + ", " + sqlString(row.title) + ");");
     assert.equal(insert.status, 0, insert.stderr);
   }
   return dbPath;
+}
+
+function runSqlite(dbPath: string, sql: string) {
+  const native = spawnSync("sqlite3", [dbPath, sql], { encoding: "utf8" });
+  if (!native.error) {
+    return native;
+  }
+  return spawnSync(process.execPath, [path.resolve("scripts/sqlite3-shim.mjs"), dbPath, sql], {
+    cwd: path.resolve("."),
+    encoding: "utf8",
+  });
 }
 
 function sqlString(value: string) {

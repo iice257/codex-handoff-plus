@@ -4,6 +4,7 @@ iMessage Handoff lets you continue a local Codex thread from iMessage or via SMS
 
 - `imessage-handoff`: the installable Codex skill.
 - `relay`: a relay that connects Codex with Messages through [Sendblue](https://sendblue.com) (use our hosted relay or deploy your own).
+- `handoff`: the local reliability CLI for state, diagnostics, recovery, simulation, and dashboard workflows.
 
 <img width="1836" height="508" alt="image 1" src="https://github.com/user-attachments/assets/c1bacc76-a832-4de2-8a77-ded1e319dde3" />
 
@@ -47,6 +48,30 @@ $imessage-handoff
 $imessage-handoff stop
 ```
 
+Local CLI:
+
+```bash
+handoff init
+handoff start
+handoff stop
+handoff status
+handoff doctor
+handoff repair
+handoff logs
+handoff transcript
+handoff recover
+handoff simulate inbound "what did I miss?"
+handoff simulate failure webhook_timeout
+handoff dashboard
+handoff config get
+handoff config set apiBaseUrl https://<your-worker-url>
+handoff config profiles
+handoff config use dry-run
+handoff upgrade
+```
+
+Every CLI command supports `--json` for stable machine-readable output. The default runtime mode for real profiles is `confirm-send`; simulator and test profiles use `dry-run`.
+
 iMessage:
 
 ```text
@@ -71,6 +96,14 @@ $imessage-handoff reset my install token
 $imessage-handoff remove hook
 ```
 
+For the reliability CLI, profile config lives beside the skill state under `.state/plus/config.json`. Existing `.state/config.json` is migrated by:
+
+```bash
+handoff upgrade
+```
+
+See [docs/commands.md](docs/commands.md), [docs/architecture.md](docs/architecture.md), and [docs/skill-reroute.md](docs/skill-reroute.md).
+
 ## Uninstall
 
 Ask `$imessage-handoff remove hook`. This removes the Codex Stop hook used for communication with the relay. You can then disable or remove the skill in Codex settings.
@@ -90,3 +123,5 @@ iMessage Handoff is designed to store the minimum data needed to route messages.
 User message content is held only briefly while waiting for local Codex to claim it, then it is scrubbed. Codex replies and generated images are forwarded to Sendblue, our iMessage sending provider, and are not stored by the relay. Aside from this transient relay processing, Sendblue is the only system intended to persist iMessage content.
 
 For added security, Cloudflare persisted logging is disabled for the `imessage-handoff` relay so messages are not stored in Cloudflare logs.
+
+The local `handoff` CLI writes a redacted JSONL event log for reliability diagnostics. Tokens, auth headers, API keys, webhook secrets, and phone numbers are redacted before they are displayed or written by the new local event layer.

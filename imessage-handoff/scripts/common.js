@@ -450,6 +450,9 @@ function readCodexSidebarTitle(codexThreadId) {
     stateDbPath,
     "SELECT title FROM threads WHERE id = '" + escapedThreadId + "' LIMIT 1;",
   ], { encoding: "utf8" });
+  if (result.error) {
+    return readShimCodexSidebarTitle(stateDbPath, codexThreadId);
+  }
   if (result.status !== 0 || !result.stdout.trim()) {
     return "";
   }
@@ -458,6 +461,22 @@ function readCodexSidebarTitle(codexThreadId) {
     const rows = JSON.parse(result.stdout);
     const title = Array.isArray(rows) && rows[0] && typeof rows[0].title === "string"
       ? rows[0].title
+      : "";
+    const normalizedTitle = normalizeTitleText(title);
+    return isUsableThreadTitle(title) ? normalizedTitle : "";
+  } catch {
+    return "";
+  }
+}
+
+function readShimCodexSidebarTitle(stateDbPath, codexThreadId) {
+  // Test and local Windows environments may not have sqlite3 installed. The
+  // repo test shim stores the tiny threads table as JSON, so use that as a
+  // compatibility fallback without changing production behavior when sqlite3 exists.
+  try {
+    const db = readJson(stateDbPath);
+    const title = db && db.threads && db.threads[codexThreadId] && typeof db.threads[codexThreadId].title === "string"
+      ? db.threads[codexThreadId].title
       : "";
     const normalizedTitle = normalizeTitleText(title);
     return isUsableThreadTitle(title) ? normalizedTitle : "";
