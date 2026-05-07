@@ -13,7 +13,7 @@ export function hookStatus(env = process.env) {
   const configText = existsSync(configToml) ? readFileSync(configToml, "utf8") : "";
   const hooksText = existsSync(hooksJson) ? readFileSync(hooksJson, "utf8") : "";
   const codexHooksEnabled = /\[features\][\s\S]*?codex_hooks\s*=\s*true/.test(configText);
-  const normalizedHooks = hooksText.replace(/\\/g, "/");
+  const normalizedHooks = hooksText.replace(/\\+/g, "/");
   const stopHookInstalled = normalizedHooks.includes("/imessage-handoff/scripts/publish-stop.js")
     || normalizedHooks.includes("/imessage-handoff/scripts/run-publish-stop.cmd")
     || normalizedHooks.includes("/scripts/publish-stop.js")
