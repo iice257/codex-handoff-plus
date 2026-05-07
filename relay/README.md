@@ -62,7 +62,7 @@ Before starting, you need a Cloudflare account, a Sendblue account with a messag
 10. Install and configure the skill against your relay.
 
    ```bash
-   $skill-installer install https://github.com/gragland/codex-imessage-handoff/tree/main/imessage-handoff
+   $skill-installer install https://github.com/iice257/codex-handoff-plus/tree/main/imessage-handoff
    ```
 
    Then ask Codex: `iMessage Handoff use my self-hosted relay at https://<your-worker-url>`
@@ -111,9 +111,9 @@ Cloudflare persisted logging is disabled for this Worker in `wrangler.jsonc`. Me
 ## Development
 
 ```bash
-pnpm --filter @gaberagland/imessage-handoff-relay test
-pnpm --filter @gaberagland/imessage-handoff-relay typecheck
-pnpm --filter @gaberagland/imessage-handoff-relay dev
+pnpm --filter @iice257/codex-handoff-plus-relay test
+pnpm --filter @iice257/codex-handoff-plus-relay typecheck
+pnpm --filter @iice257/codex-handoff-plus-relay dev
 ```
 
 `src/worker.ts` is the Worker entrypoint and contains the route handling directly.

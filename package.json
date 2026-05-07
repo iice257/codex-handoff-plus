@@ -1,5 +1,5 @@
 {
-  "name": "@gaberagland/imessage-handoff",
+  "name": "@iice257/codex-handoff-plus",
   "version": "0.1.0",
   "description": "Install the iMessage Handoff Codex skill for continuing Codex threads from iMessage.",
   "type": "module",
@@ -17,9 +17,9 @@
   ],
   "packageManager": "pnpm@10.26.0",
   "scripts": {
-    "build": "pnpm --filter @gaberagland/imessage-handoff-relay build",
+    "build": "pnpm --filter @iice257/codex-handoff-plus-relay build",
     "test": "node scripts/run-tests.mjs",
-    "typecheck": "pnpm --filter @gaberagland/imessage-handoff-relay typecheck"
+    "typecheck": "pnpm --filter @iice257/codex-handoff-plus-relay typecheck"
   },
   "engines": {
     "node": ">=20"

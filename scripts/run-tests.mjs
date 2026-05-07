@@ -10,7 +10,7 @@ const env = {
 };
 
 const commands = [
-  ["pnpm", ["--filter", "@gaberagland/imessage-handoff-relay", "test"]],
+  ["pnpm", ["--filter", "@iice257/codex-handoff-plus-relay", "test"]],
   [process.execPath, ["--test", "tests/plus/*.test.mjs"]],
   [process.execPath, ["--experimental-strip-types", "--test", "tests/skill/*.test.ts"]],
 ];

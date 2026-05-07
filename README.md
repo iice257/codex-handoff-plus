@@ -13,7 +13,7 @@ iMessage Handoff lets you continue a local Codex thread from iMessage or via SMS
 Install the skill from Codex:
 
 ```text
-$skill-installer install https://github.com/gragland/codex-imessage-handoff/tree/main/imessage-handoff
+$skill-installer install https://github.com/iice257/codex-handoff-plus/tree/main/imessage-handoff
 ```
 
 After installing, open a Codex thread and say:
