@@ -136,6 +136,13 @@ function areCodexHooksEnabled(filePath) {
 }
 
 function handoffStopHookCommand(targetSkillDir) {
+  if (process.platform === "win32") {
+    return [
+      windowsCommandQuote(path.join(targetSkillDir, "scripts", "run-publish-stop.cmd")),
+      windowsCommandQuote(process.execPath),
+      windowsCommandQuote(path.join(targetSkillDir, "scripts", "publish-stop.js")),
+    ].join(" ");
+  }
   return [
     shellQuote(process.execPath),
     shellQuote(path.join(targetSkillDir, "scripts", "publish-stop.js")),
@@ -400,6 +407,10 @@ function writeActiveThreads(active) {
 
 function shellQuote(value) {
   return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+function windowsCommandQuote(value) {
+  return '"' + String(value).replace(/"/g, '\\"') + '"';
 }
 
 function basenameForTitle(cwd) {
