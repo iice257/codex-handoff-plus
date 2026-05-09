@@ -4,8 +4,12 @@ setlocal
 set "NODE_EXE=%~1"
 set "SCRIPT=%~2"
 if "%SCRIPT%"=="" (
-  set "SCRIPT=%~1"
-  set "NODE_EXE="
+  if "%NODE_EXE%"=="" (
+    set "SCRIPT=%~dp0publish-stop.js"
+  ) else (
+    set "SCRIPT=%~1"
+    set "NODE_EXE="
+  )
 )
 if "%SCRIPT%"=="" (
   echo Missing publish-stop script path. 1>&2

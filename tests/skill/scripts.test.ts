@@ -357,6 +357,64 @@ test("configure hook-status accepts an existing iMessage Handoff hook with a dif
   assert.equal(hooksRoot.hooks.Stop[0].hooks[0].command, existingCommand);
 });
 
+test("configure hook-status accepts an existing Windows wrapper-only Stop hook", async () => {
+  const stateDir = mkdtempSync(path.join(os.tmpdir(), "imessage-handoff-config-"));
+  const codexHome = mkdtempSync(path.join(os.tmpdir(), "imessage-handoff-codex-home-"));
+  const hooksPath = path.join(codexHome, "hooks.json");
+  const existingCommand = '"C:\\Users\\ngaremuki\\.codex\\skills\\imessage-handoff\\scripts\\run-publish-stop.cmd"';
+  writeFileSync(path.join(codexHome, "config.toml"), "[features]\ncodex_hooks = true\n");
+  writeFileSync(hooksPath, JSON.stringify({
+    hooks: {
+      Stop: [{
+        hooks: [{
+          type: "command",
+          command: existingCommand,
+          timeout: 86520,
+          statusMessage: "Waiting for iMessage replies",
+          silent: true,
+        }],
+      }],
+    },
+  }));
+
+  const status = await runScript("configure.js", ["hook-status"], { stateDir, codexHome });
+  assert.equal(status.code, 0, status.stderr);
+  const output = JSON.parse(status.stdout);
+  assert.equal(output.codexHooksEnabled, true);
+  assert.equal(output.stopHookInstalled, true);
+  assert.equal(output.ready, true);
+
+  const install = await runScript("configure.js", ["install-hook"], { stateDir, codexHome });
+  assert.equal(install.code, 0, install.stderr);
+  assert.equal(JSON.parse(install.stdout).hookSetupChanged, false);
+});
+
+if (process.platform === "win32") {
+  test("run-publish-stop.cmd works as a wrapper-only Codex hook command", () => {
+    const stateDir = mkdtempSync(path.join(os.tmpdir(), "imessage-handoff-config-"));
+    writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({
+      apiBaseUrl: "https://example.test",
+      token: "dev-token",
+      stopWaitSeconds: 0,
+    }));
+
+    const result = spawnSync("cmd.exe", ["/d", "/c", "call", path.join(scriptsDir, "run-publish-stop.cmd")], {
+      cwd: path.resolve("."),
+      env: scriptEnv({ stateDir }),
+      input: JSON.stringify({
+        hook_event_name: "Stop",
+        session_id: "inactive-thread",
+        cwd: path.resolve("."),
+      }),
+      encoding: "utf8",
+    });
+
+    assert.equal(result.status, 0, result.stderr);
+    assert.deepEqual(JSON.parse(result.stdout), { continue: true });
+    assert.equal(result.stderr, "");
+  });
+}
+
 test("publish-stop exits quietly for inactive threads", async () => {
   const stateDir = tempState();
   const result = await runScript("publish-stop.js", [], {

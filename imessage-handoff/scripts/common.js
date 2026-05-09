@@ -211,8 +211,7 @@ function isImessageHandoffStopHook(command) {
   }
   const normalized = command.replace(/\\/g, "/");
   return normalized.indexOf("/imessage-handoff/scripts/publish-stop.js") !== -1
-    || normalized.indexOf("/.agents/skills/imessage-handoff/scripts/publish-stop.js") !== -1
-    || normalized.indexOf("/.codex/skills/imessage-handoff/scripts/publish-stop.js") !== -1;
+    || normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1;
 }
 
 function uninstallStopHook(hooksPath) {
