@@ -583,11 +583,6 @@ function stopBlock(reason) {
   return {
     decision: "block",
     reason,
-    hookSpecificOutput: {
-      hookEventName: "Stop",
-      decision: "block",
-      reason,
-    },
   };
 }
 

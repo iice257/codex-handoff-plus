@@ -873,6 +873,7 @@ test("publish-stop claims an iMessage reply and emits a block decision", async (
   assert.equal(result.code, 0);
   const parsed = JSON.parse(result.stdout);
   assert.equal(parsed.decision, "block");
+  assert.equal(Object.hasOwn(parsed, "hookSpecificOutput"), false);
   assert.match(parsed.reason, /Local display block to render:\n\*\*iMessage reply\*\*\n> What is 2 \+ 2\?/);
   assert.match(parsed.reason, /send-update\.js' --thread-id='codex-thread-1' --message='Brief progress update here'/);
   assert.match(parsed.reason, /very brief progress update every few minutes/);
