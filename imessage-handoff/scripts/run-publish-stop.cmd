@@ -23,9 +23,43 @@ if errorlevel 1 (
 )
 
 if not "%NODE_EXE%"=="" (
-  "%NODE_EXE%" "%SCRIPT%"
-  exit /b %errorlevel%
+  set "OUT=%TEMP%\imessage-handoff-stop-%RANDOM%-%RANDOM%.json"
+  set "ERR=%TEMP%\imessage-handoff-stop-%RANDOM%-%RANDOM%.err"
+  "%NODE_EXE%" "%SCRIPT%" > "%OUT%" 2> "%ERR%"
+  set "CODE=%ERRORLEVEL%"
+  if not "%CODE%"=="0" (
+    type "%ERR%" 1>&2
+    del "%OUT%" >nul 2>nul
+    del "%ERR%" >nul 2>nul
+    exit /b %CODE%
+  )
+  for %%A in ("%OUT%") do set "SIZE=%%~zA"
+  if "%SIZE%"=="0" (
+    echo {"continue":true}
+  ) else (
+    type "%OUT%"
+  )
+  del "%OUT%" >nul 2>nul
+  del "%ERR%" >nul 2>nul
+  exit /b 0
 )
 
-node "%SCRIPT%"
-exit /b %errorlevel%
+set "OUT=%TEMP%\imessage-handoff-stop-%RANDOM%-%RANDOM%.json"
+set "ERR=%TEMP%\imessage-handoff-stop-%RANDOM%-%RANDOM%.err"
+node "%SCRIPT%" > "%OUT%" 2> "%ERR%"
+set "CODE=%ERRORLEVEL%"
+if not "%CODE%"=="0" (
+  type "%ERR%" 1>&2
+  del "%OUT%" >nul 2>nul
+  del "%ERR%" >nul 2>nul
+  exit /b %CODE%
+)
+for %%A in ("%OUT%") do set "SIZE=%%~zA"
+if "%SIZE%"=="0" (
+  echo {"continue":true}
+) else (
+  type "%OUT%"
+)
+del "%OUT%" >nul 2>nul
+del "%ERR%" >nul 2>nul
+exit /b 0
