@@ -54,7 +54,7 @@
   },
   "vars": {
     "SENDBLUE_FROM_NUMBER": "+13054507715",
-    "SENDBLUE_API_BASE_URL": "https://api.sendblue.com/api",
+    "SENDBLUE_API_BASE_URL": "https://api.sendblue.co/api",
     "SENDBLUE_TYPING_DELAY_MS": "2000"
   }
 }
