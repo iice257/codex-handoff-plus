@@ -18,6 +18,7 @@ const CONTACT_CARD_IMAGE_FILENAME = "codex-contact.jpg";
 const THREAD_LIST_COMMANDS = new Set(["list", "threads"]);
 const NO_HANDOFF_THREADS_MESSAGE = "You have no iMessage handoff threads";
 const SWITCH_RANGE_MESSAGE = "Text threads to see active iMessage handoff threads.";
+const DEFAULT_SENDBLUE_FROM_NUMBER = "+13054507715";
 
 // Pairing is the security boundary that lets an iMessage sender control a local
 // Codex thread. Codes are intentionally short for human texting, so they expire
@@ -450,6 +451,17 @@ function makeId(prefix: string) {
   return `${prefix}_${crypto.randomUUID().replaceAll("-", "").slice(0, 16)}`;
 }
 
+function configuredSendblueNumber(env: Env) {
+  return env.SENDBLUE_FROM_NUMBER?.trim() || DEFAULT_SENDBLUE_FROM_NUMBER;
+}
+
+function redactedPhone(value: string | null | undefined) {
+  if (!value) {
+    return null;
+  }
+  return value.replace(/\d(?=\d{4})/g, "*");
+}
+
 function bytesToHex(bytes: Uint8Array) {
   return [...bytes].map((byte) => byte.toString(16).padStart(2, "0")).join("");
 }
@@ -578,7 +590,7 @@ async function handleRegister(request: Request, env: Env, threadId: string) {
 
   return json({
     id: threadId,
-    sendblueNumber: env.SENDBLUE_FROM_NUMBER || "+12344198201",
+    sendblueNumber: configuredSendblueNumber(env),
     paired: Boolean(existingBinding),
     pairingRequired,
     pairingCode,
@@ -1064,7 +1076,7 @@ function foldVCardLine(line: string) {
 }
 
 function contactCardResponse(request: Request, env: Env) {
-  const phoneNumber = env.SENDBLUE_FROM_NUMBER?.trim() || "+12344198201";
+  const phoneNumber = configuredSendblueNumber(env);
   const vcard = [
     "BEGIN:VCARD",
     "VERSION:3.0",
@@ -1112,7 +1124,7 @@ async function uploadSendblueMedia(env: Env, image: GeneratedImageInput) {
 }
 
 async function sendSendblueMessage(env: Env, number: string, content: string | null, mediaUrl: string | null = null) {
-  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim() || "+12344198201";
+  const fromNumber = configuredSendblueNumber(env);
   const payload: Record<string, string> = {
     number,
     from_number: fromNumber,
@@ -1137,7 +1149,7 @@ async function sendSendblueMessage(env: Env, number: string, content: string | n
 }
 
 async function sendSendblueCarousel(env: Env, number: string, mediaUrls: string[]) {
-  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim() || "+12344198201";
+  const fromNumber = configuredSendblueNumber(env);
 
   const response = await fetch(`${sendblueApiBaseUrl(env)}/send-carousel`, {
     method: "POST",
@@ -1217,7 +1229,7 @@ async function sendStatusNotification(
 }
 
 async function sendSendblueTypingIndicator(env: Env, number: string) {
-  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim() || "+12344198201";
+  const fromNumber = configuredSendblueNumber(env);
   const response = await fetch(`${sendblueApiBaseUrl(env)}/send-typing-indicator`, {
     method: "POST",
     headers: sendblueAuthHeaders(env),
@@ -1238,7 +1250,7 @@ async function sendSendblueTypingIndicator(env: Env, number: string) {
 }
 
 async function sendSendblueReadReceipt(env: Env, number: string) {
-  const fromNumber = env.SENDBLUE_FROM_NUMBER?.trim() || "+12344198201";
+  const fromNumber = configuredSendblueNumber(env);
   const response = await fetch(`${sendblueApiBaseUrl(env)}/mark-read`, {
     method: "POST",
     headers: sendblueAuthHeaders(env),
@@ -1684,6 +1696,63 @@ async function handleSyncSendblueMessages(request: Request, env: Env) {
   return json({ ok: true, paired: false, scanned });
 }
 
+async function handleSendblueDiagnostics(request: Request, env: Env) {
+  await requireOwnerId(request);
+
+  const configuredNumber = configuredSendblueNumber(env);
+  const headers = sendblueAuthOnlyHeaders(env);
+  const receiveUrl = `${new URL(request.url).origin}/webhooks/sendblue`;
+
+  const linesResponse = await fetch(`${sendblueApiBaseUrl(env)}/lines`, {
+    method: "GET",
+    headers,
+  });
+  const linesBody = await linesResponse.json<unknown>().catch(() => null);
+  const lineBodyText = JSON.stringify(linesBody);
+  const configuredLinePresent = linesResponse.ok && lineBodyText.includes(configuredNumber);
+
+  const webhookResponse = await fetch(`${sendblueApiBaseUrl(env)}/account/webhooks`, {
+    method: "GET",
+    headers,
+  });
+  const webhookBody = await webhookResponse.json<Record<string, unknown>>().catch(() => null);
+  const webhooks = webhookBody && typeof webhookBody.webhooks === "object" && webhookBody.webhooks !== null
+    ? webhookBody.webhooks as Record<string, unknown>
+    : {};
+  const receive = Array.isArray(webhooks.receive) ? webhooks.receive : [];
+  const receiveWebhookPresent = receive.some((entry) => {
+    if (typeof entry === "string") {
+      return entry === receiveUrl;
+    }
+    return typeof entry === "object" && entry !== null
+      && (entry as Record<string, unknown>).url === receiveUrl;
+  });
+
+  const recentInboundUrl = new URL(`${sendblueApiBaseUrl(env)}/v2/messages`);
+  recentInboundUrl.searchParams.set("limit", "10");
+  recentInboundUrl.searchParams.set("order_direction", "desc");
+  recentInboundUrl.searchParams.set("is_outbound", "false");
+  recentInboundUrl.searchParams.set("sendblue_number", configuredNumber);
+  const messagesResponse = await fetch(recentInboundUrl, {
+    method: "GET",
+    headers,
+  });
+  const messagesBody = await messagesResponse.json<unknown>().catch(() => null);
+  const recentInboundMessages = recentSendblueMessages(messagesBody);
+
+  return json({
+    ok: linesResponse.ok && webhookResponse.ok && messagesResponse.ok,
+    configuredNumber: redactedPhone(configuredNumber),
+    configuredLinePresent,
+    linesStatus: linesResponse.status,
+    receiveWebhookPresent,
+    receiveUrl,
+    webhookStatus: webhookResponse.status,
+    recentInboundStatus: messagesResponse.status,
+    recentInboundCountForConfiguredLine: recentInboundMessages.length,
+  });
+}
+
 async function handleGetThread(request: Request, env: Env, threadId: string) {
   // Debug/read endpoint for local development and smoke tests.
   const ownerId = await requireOwnerId(request);
@@ -1775,6 +1844,10 @@ export async function handleRequest(request: Request, env: Env, ctx?: ExecutionC
       return await handleSyncSendblueMessages(request, env);
     }
 
+    if (request.method === "GET" && url.pathname === "/admin/sendblue/diagnostics") {
+      return await handleSendblueDiagnostics(request, env);
+    }
+
     if (request.method === "POST" && url.pathname === "/installations") {
       // Install tokens are anonymous identity creation. This IP bucket is a
       // coarse speed bump for scripts minting tokens in a loop.
@@ -1832,3 +1905,4 @@ export default {
     return handleRequest(request, env, ctx);
   },
 };
+
