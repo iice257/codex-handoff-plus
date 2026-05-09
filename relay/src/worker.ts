@@ -1529,6 +1529,161 @@ async function handleSendblueWebhook(request: Request, env: Env, ctx?: Execution
   return json({ ok: true, replyId });
 }
 
+async function handleEnsureSendblueWebhook(request: Request, env: Env) {
+  await requireOwnerId(request);
+
+  const apiKey = env.SENDBLUE_API_KEY?.trim();
+  const secretKey = env.SENDBLUE_SECRET_KEY?.trim();
+  const webhookSecret = env.SENDBLUE_WEBHOOK_SECRET?.trim();
+  if (!apiKey || !secretKey || !webhookSecret) {
+    return error(500, "Sendblue credentials are not configured.");
+  }
+
+  const receiveUrl = `${new URL(request.url).origin}/webhooks/sendblue`;
+  const endpoint = `${sendblueApiBaseUrl(env)}/account/webhooks`;
+  const headers = {
+    ...sendblueAuthOnlyHeaders(env),
+    "content-type": "application/json",
+  };
+
+  const currentResponse = await fetch(endpoint, { method: "GET", headers });
+  if (!currentResponse.ok) {
+    return error(502, "Sendblue webhook lookup failed.");
+  }
+  const current = await currentResponse.json<Record<string, unknown>>();
+  const webhooks = typeof current.webhooks === "object" && current.webhooks !== null
+    ? current.webhooks as Record<string, unknown>
+    : {};
+  const receive = Array.isArray(webhooks.receive) ? webhooks.receive : [];
+  const hasReceiveWebhook = receive.some((entry) => {
+    if (typeof entry === "string") {
+      return false;
+    }
+    return typeof entry === "object" && entry !== null
+      && (entry as Record<string, unknown>).url === receiveUrl
+      && (entry as Record<string, unknown>).secret === webhookSecret;
+  });
+
+  if (!hasReceiveWebhook) {
+    const addResponse = await fetch(endpoint, {
+      method: "POST",
+      headers,
+      body: JSON.stringify({
+        type: "receive",
+        webhooks: [{ url: receiveUrl, secret: webhookSecret }],
+      }),
+    });
+    if (!addResponse.ok) {
+      return error(502, "Sendblue webhook registration failed.");
+    }
+  }
+
+  return json({
+    ok: true,
+    receiveUrl,
+    hadReceiveWebhook: hasReceiveWebhook,
+    action: hasReceiveWebhook ? "none" : "added",
+  });
+}
+
+function recentSendblueMessages(value: unknown) {
+  if (Array.isArray(value)) {
+    return value;
+  }
+  if (typeof value !== "object" || value === null) {
+    return [];
+  }
+  const body = value as Record<string, unknown>;
+  for (const key of ["messages", "data", "results"]) {
+    if (Array.isArray(body[key])) {
+      return body[key] as unknown[];
+    }
+  }
+  return [];
+}
+
+async function handleSyncSendblueMessages(request: Request, env: Env) {
+  await requireOwnerId(request);
+
+  const endpoint = new URL(`${sendblueApiBaseUrl(env)}/v2/messages`);
+  endpoint.searchParams.set("limit", "25");
+  endpoint.searchParams.set("order_direction", "desc");
+  endpoint.searchParams.set("is_outbound", "false");
+
+  const response = await fetch(endpoint, {
+    method: "GET",
+    headers: sendblueAuthOnlyHeaders(env),
+  });
+  if (!response.ok) {
+    return error(502, "Sendblue message sync failed.");
+  }
+
+  const messages = recentSendblueMessages(await response.json<unknown>());
+  let scanned = 0;
+  for (const entry of messages) {
+    if (typeof entry !== "object" || entry === null) {
+      continue;
+    }
+    scanned += 1;
+    const message = entry as Record<string, unknown>;
+    const isOutbound = message.is_outbound === true || String(message.is_outbound).toLowerCase() === "true";
+    const status = optionalString(message.status)?.toUpperCase();
+    const content = optionalLimitedString(message.content, "content", MAX_WEBHOOK_CONTENT_LENGTH);
+    const fromNumber = optionalLimitedString(message.from_number, "from_number", 64) ?? optionalLimitedString(message.number, "number", 64);
+    const externalId = optionalLimitedString(message.message_handle, "message_handle", 200) ?? optionalLimitedString(message.id, "id", 200);
+    const pairingCodeCandidate = content ? content.toUpperCase() : null;
+    if (isOutbound || status !== "RECEIVED" || !fromNumber || !isPairingCodeCandidate(pairingCodeCandidate)) {
+      continue;
+    }
+
+    const pairingThread = await findPairingThread(env, pairingCodeCandidate ?? "");
+    if (!pairingThread) {
+      continue;
+    }
+
+    const now = nowIso();
+    const previousBinding = await findPhoneBinding(env, fromNumber);
+    await env.DB.prepare(
+      "DELETE FROM phone_bindings WHERE owner_id = ? AND phone_number != ?",
+    ).bind(pairingThread.owner_id, fromNumber).run();
+    await env.DB.prepare(
+      `INSERT INTO phone_bindings (phone_number, owner_id, active_thread_id, created_at, updated_at)
+        VALUES (?, ?, ?, ?, ?)
+        ON CONFLICT(phone_number) DO UPDATE SET
+          owner_id = excluded.owner_id,
+          active_thread_id = excluded.active_thread_id,
+          updated_at = excluded.updated_at`,
+    ).bind(fromNumber, pairingThread.owner_id, pairingThread.id, now, now).run();
+    await env.DB.prepare(
+      "UPDATE handoff_threads SET pairing_code = NULL, pairing_code_expires_at = NULL, updated_at = ? WHERE id = ?",
+    ).bind(now, pairingThread.id).run();
+    await clearPairingAttempts(env, fromNumber);
+    if (externalId && !(await findExternalReply(env, externalId))) {
+      await insertHandoffReply(env, pairingThread.id, content ?? "", externalId, "applied");
+    }
+    if (!previousBinding?.contact_card_sent_at) {
+      try {
+        await sendPairingContactCard(env, fromNumber, new URL(request.url).origin);
+        const sentAt = nowIso();
+        await env.DB.prepare(
+          "UPDATE phone_bindings SET contact_card_sent_at = ?, updated_at = ? WHERE phone_number = ?",
+        ).bind(sentAt, sentAt, fromNumber).run();
+      } catch {
+        console.warn("Sendblue contact card failed.");
+      }
+    }
+    try {
+      await sendSendblueMessage(env, fromNumber, handoffActivationMessage(pairingThread));
+    } catch {
+      // Sync should still pair even if confirmation delivery is temporarily unavailable.
+    }
+
+    return json({ ok: true, paired: true, threadId: pairingThread.id, scanned });
+  }
+
+  return json({ ok: true, paired: false, scanned });
+}
+
 async function handleGetThread(request: Request, env: Env, threadId: string) {
   // Debug/read endpoint for local development and smoke tests.
   const ownerId = await requireOwnerId(request);
@@ -1610,6 +1765,14 @@ export async function handleRequest(request: Request, env: Env, ctx?: ExecutionC
 
     if (request.method === "POST" && url.pathname === "/webhooks/sendblue") {
       return await handleSendblueWebhook(request, env, ctx);
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/sendblue/webhook") {
+      return await handleEnsureSendblueWebhook(request, env);
+    }
+
+    if (request.method === "POST" && url.pathname === "/admin/sendblue/sync") {
+      return await handleSyncSendblueMessages(request, env);
     }
 
     if (request.method === "POST" && url.pathname === "/installations") {
