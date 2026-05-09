@@ -13,7 +13,7 @@
     {
       "binding": "DB",
       "database_name": "imessage-handoff",
-      "database_id": "29b280f6-a3a0-4980-86f3-d58b142b9bd6",
+      "database_id": "b1cbb35a-bc43-4550-bd62-d45260309493",
       "migrations_dir": "./src/db/migrations"
     }
   ],
