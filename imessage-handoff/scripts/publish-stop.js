@@ -579,6 +579,18 @@ function continuationForLocalTakeover() {
   ].join("\n");
 }
 
+function stopBlock(reason) {
+  return {
+    decision: "block",
+    reason,
+    hookSpecificOutput: {
+      hookEventName: "Stop",
+      decision: "block",
+      reason,
+    },
+  };
+}
+
 async function main() {
 try {
   // Codex passes Stop hook context through stdin. If this is not an active handoff
@@ -598,10 +610,7 @@ try {
   }
   if (hasQueuedLocalFollowUp(codexThreadId)) {
     await disableHandoffSilently(config, codexThreadId, active);
-    console.log(JSON.stringify({
-      decision: "block",
-      reason: continuationForLocalTakeover(),
-    }));
+    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
     process.exit(0);
   }
 
@@ -638,10 +647,7 @@ try {
   }
   if (hasQueuedLocalFollowUp(codexThreadId)) {
     await disableHandoffSilently(config, codexThreadId, latestActive);
-    console.log(JSON.stringify({
-      decision: "block",
-      reason: continuationForLocalTakeover(),
-    }));
+    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
     process.exit(0);
   }
   latestActive.threads[codexThreadId] = {
@@ -659,18 +665,12 @@ try {
 
   const reply = await waitForReplyWhileActive(config, codexThreadId);
   if (reply && reply.localTakeover) {
-    console.log(JSON.stringify({
-      decision: "block",
-      reason: continuationForLocalTakeover(),
-    }));
+    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
   } else if (reply) {
     // "block" tells Codex to immediately continue with this synthetic user
     // message instead of ending the turn.
     const preparedReply = await prepareReplyForContinuation(codexThreadId, reply);
-    console.log(JSON.stringify({
-      decision: "block",
-      reason: continuationForReply(codexThreadId, preparedReply),
-    }));
+    console.log(JSON.stringify(stopBlock(continuationForReply(codexThreadId, preparedReply))));
   }
 } catch {
   // Stop hooks should never break normal Codex turns. Fail closed to silence.
