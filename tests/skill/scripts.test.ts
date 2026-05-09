@@ -315,6 +315,25 @@ test("configure install-hook installs once and reports ready status", async () =
   assert.equal(installOutput.codexHooksEnabled, true);
   assert.equal(installOutput.stopHookInstalled, true);
   assert.equal(installOutput.ready, true);
+  if (process.platform === "win32") {
+    const hooksRoot = JSON.parse(readFileSync(path.join(codexHome, "hooks.json"), "utf8"));
+    const command = hooksRoot.hooks.Stop[0].hooks[0].command;
+    const commandArgs = /\s/.test(command)
+      ? ["/d", "/c", "call", path.join(scriptsDir, "run-publish-stop.cmd")]
+      : ["/d", "/c", command];
+    const hookRun = spawnSync("cmd.exe", commandArgs, {
+      cwd: path.resolve("."),
+      env: scriptEnv({ stateDir }),
+      input: JSON.stringify({
+        hook_event_name: "Stop",
+        session_id: "inactive-thread",
+        cwd: path.resolve("."),
+      }),
+      encoding: "utf8",
+    });
+    assert.equal(hookRun.status, 0, hookRun.stderr);
+    assert.deepEqual(JSON.parse(hookRun.stdout), {});
+  }
 
   const secondInstall = await runScript("configure.js", ["install-hook"], { stateDir, codexHome });
   assert.equal(secondInstall.code, 0, secondInstall.stderr);
@@ -389,7 +408,7 @@ test("configure hook-status accepts an existing Windows wrapper-only Stop hook",
   assert.equal(JSON.parse(install.stdout).hookSetupChanged, true);
   const hooksRoot = JSON.parse(readFileSync(hooksPath, "utf8"));
   assert.match(hooksRoot.hooks.Stop[0].hooks[0].command, /run-publish-stop\.cmd/);
-  assert.match(hooksRoot.hooks.Stop[0].hooks[0].command, /publish-stop\.js/);
+  assert.doesNotMatch(hooksRoot.hooks.Stop[0].hooks[0].command, /publish-stop\.js/);
 });
 
 if (process.platform === "win32") {

@@ -137,15 +137,11 @@ function areCodexHooksEnabled(filePath) {
 
 function handoffStopHookCommand(targetSkillDir) {
   if (process.platform === "win32") {
-    return [
-      windowsCommandQuote(path.join(targetSkillDir, "scripts", "run-publish-stop.cmd")),
-      windowsCommandQuote(process.execPath),
-      windowsCommandQuote(path.join(targetSkillDir, "scripts", "publish-stop.js")),
-    ].join(" ");
+    return windowsCommandPath(path.join(targetSkillDir, "scripts", "run-publish-stop.cmd"));
   }
   return [
-    shellQuote(process.execPath),
-    shellQuote(path.join(targetSkillDir, "scripts", "publish-stop.js")),
+    commandQuote(process.execPath),
+    commandQuote(path.join(targetSkillDir, "scripts", "publish-stop.js")),
   ].join(" ");
 }
 
@@ -225,7 +221,7 @@ function repairStopHook(hooksPath, targetSkillDir) {
       if (!hook || typeof hook !== "object") {
         continue;
       }
-      if (isWrapperOnlyImessageHandoffStopHook(hook.command)) {
+      if (isRepairableImessageHandoffStopHook(hook.command) && hook.command !== canonicalCommand) {
         hook.command = canonicalCommand;
         hook.timeout = handoffStopHookTimeoutSeconds;
         hook.statusMessage = handoffStopHookStatusMessage;
@@ -251,13 +247,12 @@ function isImessageHandoffStopHook(command) {
     || normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1;
 }
 
-function isWrapperOnlyImessageHandoffStopHook(command) {
+function isRepairableImessageHandoffStopHook(command) {
   if (typeof command !== "string") {
     return false;
   }
   const normalized = command.replace(/\\/g, "/");
-  return normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1
-    && normalized.indexOf("/imessage-handoff/scripts/publish-stop.js") === -1;
+  return normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1;
 }
 
 function uninstallStopHook(hooksPath) {
@@ -452,6 +447,15 @@ function writeActiveThreads(active) {
 
 function shellQuote(value) {
   return "'" + String(value).replace(/'/g, "'\\''") + "'";
+}
+
+function commandQuote(value) {
+  return process.platform === "win32" ? windowsCommandQuote(value) : shellQuote(value);
+}
+
+function windowsCommandPath(value) {
+  const text = String(value);
+  return /\s/.test(text) ? windowsCommandQuote(text) : text;
 }
 
 function windowsCommandQuote(value) {
