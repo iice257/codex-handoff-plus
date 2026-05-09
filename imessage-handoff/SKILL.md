@@ -129,6 +129,18 @@ Required shape:
 }
 ```
 
+Optional voice-note transcription is local-only and off by default. To enable Groq speech-to-text without changing the relay or core Stop hook path, add:
+
+```json
+{
+  "transcriptionProvider": "groq",
+  "groqTranscriptionModel": "whisper-large-v3-turbo",
+  "transcriptionLanguage": "en"
+}
+```
+
+Then set the secret API key outside committed files, preferably as `GROQ_API_KEY` or `IMESSAGE_HANDOFF_GROQ_API_KEY`. Use `whisper-large-v3-turbo` for fast/cost-effective transcription and `whisper-large-v3` when accuracy matters more than speed.
+
 If config is missing, ask the relay-choice question from Start iMessage Handoff. Do not run `start-handoff.js` until the user chooses hosted or provides a self-hosted relay URL.
 
 For self-hosting, set the relay before starting iMessage Handoff by asking iMessage Handoff to use the self-hosted relay URL.

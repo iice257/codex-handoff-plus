@@ -5,6 +5,7 @@ const https = require("https");
 const os = require("os");
 const path = require("path");
 const { apiFetch, readActiveThreads, readConfig, shellQuote, stateDir, writeActiveThreads } = require("./common.js");
+const { transcribeAttachments } = require("./media-transcription.js");
 
 const LOCAL_ONLY_START = "**iMessage reply**";
 const WS_CONNECTING = 0;
@@ -71,6 +72,24 @@ function extensionForMedia(url, contentType) {
   }
   if (normalizedType === "image/webp") {
     return ".webp";
+  }
+  if (normalizedType === "audio/flac") {
+    return ".flac";
+  }
+  if (normalizedType === "audio/mpeg" || normalizedType === "audio/mp3") {
+    return ".mp3";
+  }
+  if (normalizedType === "audio/mp4" || normalizedType === "audio/x-m4a") {
+    return ".m4a";
+  }
+  if (normalizedType === "audio/ogg") {
+    return ".ogg";
+  }
+  if (normalizedType === "audio/wav" || normalizedType === "audio/wave" || normalizedType === "audio/x-wav") {
+    return ".wav";
+  }
+  if (normalizedType === "audio/webm") {
+    return ".webm";
   }
   try {
     const ext = path.extname(new URL(url).pathname).toLowerCase();
@@ -155,7 +174,9 @@ async function downloadReplyMedia(codexThreadId, reply) {
       continue;
     }
     const file = await downloadBinary(url);
-    const filePath = path.join(attachmentDir, `image-${index + 1}${extensionForMedia(url, file.contentType)}`);
+    const extension = extensionForMedia(url, file.contentType);
+    const prefix = [".jpg", ".png", ".gif", ".webp", ".img"].includes(extension) ? "image" : "attachment";
+    const filePath = path.join(attachmentDir, `${prefix}-${index + 1}${extension}`);
     writeFileSync(filePath, file.bytes);
     downloaded.push(filePath);
   }
@@ -498,13 +519,15 @@ async function waitForReplyByWebSocket(config, codexThreadId) {
   return null;
 }
 
-async function prepareReplyForContinuation(codexThreadId, reply) {
+async function prepareReplyForContinuation(config, codexThreadId, reply) {
   // Best effort: text prompts should continue even if an attachment download
   // fails, and the continuation prompt should tell Codex about the failure.
   try {
+    const attachmentPaths = await downloadReplyMedia(codexThreadId, reply);
     return {
       ...reply,
-      attachmentPaths: await downloadReplyMedia(codexThreadId, reply),
+      attachmentPaths,
+      transcripts: await transcribeAttachments(config, attachmentPaths),
     };
   } catch (error) {
     return {
@@ -527,6 +550,22 @@ function attachmentLines(paths) {
   ];
 }
 
+function transcriptLines(transcripts) {
+  if (!Array.isArray(transcripts) || transcripts.length === 0) {
+    return [];
+  }
+  const lines = ["Voice transcripts:"];
+  for (let index = 0; index < transcripts.length; index += 1) {
+    const transcript = transcripts[index];
+    if (transcript && transcript.text) {
+      lines.push(`${index + 1}. ${transcript.text}`);
+    } else if (transcript && transcript.error) {
+      lines.push(`${index + 1}. Transcription failed: ${transcript.error}`);
+    }
+  }
+  return lines;
+}
+
 function continuationForReply(codexThreadId, reply) {
   // This text becomes the next local Codex user message. The visible block gives
   // the local thread context, while the "User message to answer" section is the
@@ -535,10 +574,12 @@ function continuationForReply(codexThreadId, reply) {
   const lines = body ? body.split(/\r?\n/) : [];
   const visibleHandoffMessageLines = lines
     .map(quoteHandoffLine)
-    .concat(attachmentLines(reply.attachmentPaths).map(quoteHandoffLine));
+    .concat(attachmentLines(reply.attachmentPaths).map(quoteHandoffLine))
+    .concat(transcriptLines(reply.transcripts).map(quoteHandoffLine));
   const visibleHandoffMessage = visibleHandoffMessageLines.join("\n");
   const userMessageParts = [
     body,
+    transcriptLines(reply.transcripts).join("\n"),
     attachmentLines(reply.attachmentPaths).join("\n"),
   ].filter(Boolean);
   if (reply.attachmentError) {
@@ -675,7 +716,7 @@ try {
   } else if (reply) {
     // "block" tells Codex to immediately continue with this synthetic user
     // message instead of ending the turn.
-    const preparedReply = await prepareReplyForContinuation(codexThreadId, reply);
+    const preparedReply = await prepareReplyForContinuation(config, codexThreadId, reply);
     emitStopOutput(stopBlock(continuationForReply(codexThreadId, preparedReply)));
   } else {
     emitStopOutput(stopContinue());

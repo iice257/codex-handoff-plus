@@ -11,7 +11,7 @@ const scriptsDir = path.resolve("imessage-handoff/scripts");
 // These tests execute the installed skill scripts the same way Codex hooks do.
 // Most network calls are routed through a mock file so the tests can verify the
 // local state machine without needing a live relay or Sendblue account.
-function scriptEnv(options: { stateDir: string; mockFile?: string; codexThreadId?: string; stateDb?: string; sessionLog?: string; globalState?: string; codexHome?: string; relayUrl?: string }) {
+function scriptEnv(options: { stateDir: string; mockFile?: string; codexThreadId?: string; stateDb?: string; sessionLog?: string; globalState?: string; codexHome?: string; relayUrl?: string; transcriptionMock?: string }) {
   const env = {
     ...process.env,
     CODEX_HOME: options.codexHome ?? path.join(options.stateDir, "codex-home"),
@@ -22,6 +22,7 @@ function scriptEnv(options: { stateDir: string; mockFile?: string; codexThreadId
     IMESSAGE_HANDOFF_STATE_DB: options.stateDb ?? "",
     IMESSAGE_HANDOFF_SESSION_LOG: options.sessionLog ?? "",
     IMESSAGE_HANDOFF_GLOBAL_STATE_PATH: options.globalState ?? "",
+    IMESSAGE_HANDOFF_MOCK_TRANSCRIPTIONS_FILE: options.transcriptionMock ?? "",
   };
   if (options.relayUrl) {
     env.IMESSAGE_HANDOFF_RELAY_URL = options.relayUrl;
@@ -29,7 +30,7 @@ function scriptEnv(options: { stateDir: string; mockFile?: string; codexThreadId
   return env;
 }
 
-function runScript(scriptName: string, args: string[], options: { stateDir: string; stdin?: string; mockFile?: string; codexThreadId?: string; stateDb?: string; sessionLog?: string; globalState?: string; codexHome?: string; relayUrl?: string }) {
+function runScript(scriptName: string, args: string[], options: { stateDir: string; stdin?: string; mockFile?: string; codexThreadId?: string; stateDb?: string; sessionLog?: string; globalState?: string; codexHome?: string; relayUrl?: string; transcriptionMock?: string }) {
   return new Promise<{ code: number; stdout: string; stderr: string }>((resolve, reject) => {
     const child = spawn(process.execPath, [path.join(scriptsDir, scriptName), ...args], {
       cwd: path.resolve("."),
@@ -1210,6 +1211,70 @@ test("publish-stop downloads one iMessage image and includes the local path", as
   const expectedPath = path.join(stateDir, "attachments", "codex-thread-1", "reply_1", "image-1.jpg");
   assert.equal(readFileSync(expectedPath, "utf8"), "cow-bytes");
   assert.match(parsed.reason, new RegExp(`Attached images:\\n1\\. ${expectedPath.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")}`));
+});
+
+test("publish-stop transcribes iMessage audio through optional Groq provider", async () => {
+  const mockPath = mockFile({
+    "POST /threads/codex-thread-1/status": { body: { ok: true } },
+    "POST /threads/codex-thread-1/replies/reply_voice/claim": {
+      body: {
+        ok: true,
+        reply: {
+          id: "reply_voice",
+          body: "",
+          media: [{ url: "https://cdn.example.test/voice.m4a" }],
+        },
+      },
+    },
+  });
+  const mock = JSON.parse(readFileSync(mockPath, "utf8"));
+  mock.websocketEvents = {
+    "/threads/codex-thread-1/events": [{ type: "reply-pending", replyId: "reply_voice" }],
+  };
+  mock.mediaResponses = {
+    "https://cdn.example.test/voice.m4a": {
+      contentType: "audio/mp4",
+      dataBase64: Buffer.from("voice-bytes").toString("base64"),
+    },
+  };
+  writeFileSync(mockPath, JSON.stringify(mock));
+  const stateDir = mkdtempSync(path.join(os.tmpdir(), "imessage-handoff-test-"));
+  const transcriptPath = path.join(stateDir, "transcripts.json");
+  writeFileSync(transcriptPath, JSON.stringify({ "attachment-1.m4a": "This is a voice note from iMessage." }));
+  writeFileSync(path.join(stateDir, "config.json"), JSON.stringify({
+    apiBaseUrl: "https://example.test",
+    token: "dev-token",
+    stopWaitSeconds: 0,
+    transcriptionProvider: "groq",
+    groqApiKey: "dev-groq-key",
+    groqTranscriptionModel: "whisper-large-v3-turbo",
+  }));
+  writeFileSync(path.join(stateDir, "active-threads.json"), JSON.stringify({
+    threads: {
+      "codex-thread-1": {
+        cwd: "/tmp/project",
+        createdAt: "2026-04-25T18:20:00.000Z",
+        lastStopAt: null,
+      },
+    },
+  }));
+
+  const result = await runScript("publish-stop.js", [], {
+    stateDir,
+    mockFile: mockPath,
+    transcriptionMock: transcriptPath,
+    stdin: JSON.stringify({
+      session_id: "codex-thread-1",
+      cwd: "/tmp/project",
+      last_assistant_message: "Done.",
+    }),
+  });
+  assert.equal(result.code, 0);
+  const parsed = JSON.parse(result.stdout);
+  const expectedPath = path.join(stateDir, "attachments", "codex-thread-1", "reply_voice", "attachment-1.m4a");
+  assert.equal(readFileSync(expectedPath, "utf8"), "voice-bytes");
+  assert.match(parsed.reason, /Voice transcripts:\n> 1\. This is a voice note from iMessage\./);
+  assert.match(parsed.reason, /User message to answer:\nVoice transcripts:\n1\. This is a voice note from iMessage\./);
 });
 
 test("publish-stop downloads multiple iMessage images in order", async () => {

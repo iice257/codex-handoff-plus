@@ -54,6 +54,11 @@ function readConfig() {
       apiBaseUrl: String(config.apiBaseUrl).replace(/\/+$/, ""),
       token: String(config.token),
       stopWaitSeconds: readNumber(config.stopWaitSeconds, process.env.IMESSAGE_HANDOFF_STOP_WAIT_SECONDS, 86400),
+      transcriptionProvider: readString(config.transcriptionProvider, process.env.IMESSAGE_HANDOFF_TRANSCRIPTION_PROVIDER, ""),
+      groqApiKey: readString(config.groqApiKey, process.env.IMESSAGE_HANDOFF_GROQ_API_KEY || process.env.GROQ_API_KEY, ""),
+      groqApiBaseUrl: readString(config.groqApiBaseUrl, process.env.IMESSAGE_HANDOFF_GROQ_API_BASE_URL, ""),
+      groqTranscriptionModel: readString(config.groqTranscriptionModel, process.env.IMESSAGE_HANDOFF_GROQ_TRANSCRIPTION_MODEL, ""),
+      transcriptionLanguage: readString(config.transcriptionLanguage, process.env.IMESSAGE_HANDOFF_TRANSCRIPTION_LANGUAGE, ""),
     };
   }
 
@@ -68,6 +73,11 @@ function readConfig() {
       apiBaseUrl: config.apiBaseUrl,
       token: config.token,
       stopWaitSeconds: readNumber(undefined, process.env.IMESSAGE_HANDOFF_STOP_WAIT_SECONDS, 86400),
+      transcriptionProvider: readString(undefined, process.env.IMESSAGE_HANDOFF_TRANSCRIPTION_PROVIDER, ""),
+      groqApiKey: readString(undefined, process.env.IMESSAGE_HANDOFF_GROQ_API_KEY || process.env.GROQ_API_KEY, ""),
+      groqApiBaseUrl: readString(undefined, process.env.IMESSAGE_HANDOFF_GROQ_API_BASE_URL, ""),
+      groqTranscriptionModel: readString(undefined, process.env.IMESSAGE_HANDOFF_GROQ_TRANSCRIPTION_MODEL, ""),
+      transcriptionLanguage: readString(undefined, process.env.IMESSAGE_HANDOFF_TRANSCRIPTION_LANGUAGE, ""),
     };
   }
 
@@ -90,6 +100,7 @@ async function ensureLocalInstall() {
       : await createInstallToken(apiBaseUrl);
 
   writeJson(configPath, {
+    ...existingConfig,
     apiBaseUrl,
     token,
     stopWaitSeconds: readNumber(existingConfig?.stopWaitSeconds, process.env.IMESSAGE_HANDOFF_STOP_WAIT_SECONDS, 86400),
@@ -307,6 +318,14 @@ function readNumber(configValue, envValue, fallback) {
   }
   const value = Number(raw);
   return Number.isFinite(value) && value >= 0 ? value : fallback;
+}
+
+function readString(configValue, envValue, fallback) {
+  const raw = envValue !== undefined && envValue !== null && envValue !== "" ? envValue : configValue;
+  if (raw === undefined || raw === null || raw === "") {
+    return fallback;
+  }
+  return String(raw);
 }
 
 async function apiFetch(config, pathName, init) {
