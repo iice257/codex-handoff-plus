@@ -39,7 +39,7 @@ if not "%NODE_EXE%"=="" (
   )
   for %%A in ("%OUT%") do set "SIZE=%%~zA"
   if "%SIZE%"=="0" (
-    echo {"continue":true}
+    echo {}
   ) else (
     type "%OUT%"
   )
@@ -60,7 +60,7 @@ if not "%CODE%"=="0" (
 )
 for %%A in ("%OUT%") do set "SIZE=%%~zA"
 if "%SIZE%"=="0" (
-  echo {"continue":true}
+  echo {}
 ) else (
   type "%OUT%"
 )

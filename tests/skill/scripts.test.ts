@@ -386,7 +386,10 @@ test("configure hook-status accepts an existing Windows wrapper-only Stop hook",
 
   const install = await runScript("configure.js", ["install-hook"], { stateDir, codexHome });
   assert.equal(install.code, 0, install.stderr);
-  assert.equal(JSON.parse(install.stdout).hookSetupChanged, false);
+  assert.equal(JSON.parse(install.stdout).hookSetupChanged, true);
+  const hooksRoot = JSON.parse(readFileSync(hooksPath, "utf8"));
+  assert.match(hooksRoot.hooks.Stop[0].hooks[0].command, /run-publish-stop\.cmd/);
+  assert.match(hooksRoot.hooks.Stop[0].hooks[0].command, /publish-stop\.js/);
 });
 
 if (process.platform === "win32") {
@@ -410,19 +413,19 @@ if (process.platform === "win32") {
     });
 
     assert.equal(result.status, 0, result.stderr);
-    assert.deepEqual(JSON.parse(result.stdout), { continue: true });
+    assert.deepEqual(JSON.parse(result.stdout), {});
     assert.equal(result.stderr, "");
   });
 }
 
-test("publish-stop exits quietly for inactive threads", async () => {
+test("publish-stop returns no-op JSON for inactive threads", async () => {
   const stateDir = tempState();
   const result = await runScript("publish-stop.js", [], {
     stateDir,
     stdin: JSON.stringify({ session_id: "session-1", cwd: "/tmp/project" }),
   });
   assert.equal(result.code, 0);
-  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stdout), {});
 });
 
 test("start-handoff requires CODEX_THREAD_ID", async () => {
@@ -729,12 +732,12 @@ test("publish-stop exits immediately without active thread", async () => {
     }),
   });
   assert.equal(result.code, 0);
-  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stdout), {});
   const mock = JSON.parse(readFileSync(mockPath, "utf8"));
   assert.equal(mock.calls?.length ?? 0, 0);
 });
 
-test("publish-stop exits quietly after status when no iMessage reply is pending", async () => {
+test("publish-stop returns no-op JSON after status when no iMessage reply is pending", async () => {
   const mockPath = mockFile({
     "POST /threads/codex-thread-1/status": { body: { ok: true } },
   });
@@ -764,7 +767,7 @@ test("publish-stop exits quietly after status when no iMessage reply is pending"
     }),
   });
   assert.equal(result.code, 0);
-  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stdout), {});
   const mock = JSON.parse(readFileSync(mockPath, "utf8"));
   assert.deepEqual(mock.calls.map((call: { method: string; path: string }) => `${call.method} ${call.path}`), [
     "POST /threads/codex-thread-1/status",
@@ -818,7 +821,7 @@ test("publish-stop ignores session-log local messages unless a local follow-up i
     }),
   });
   assert.equal(result.code, 0);
-  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stdout), {});
   const mock = JSON.parse(readFileSync(mockPath, "utf8"));
   assert.deepEqual(mock.calls.map((call: { method: string; path: string }) => `${call.method} ${call.path}`), [
     "POST /threads/codex-thread-1/status",
@@ -1327,7 +1330,7 @@ test("publish-stop exits without waiting when active entry is missing", async ()
     }),
   });
   assert.equal(result.code, 0);
-  assert.equal(result.stdout, "");
+  assert.deepEqual(JSON.parse(result.stdout), {});
   const mock = JSON.parse(readFileSync(mockPath, "utf8"));
   assert.equal(mock.calls?.length ?? 0, 0);
 });
@@ -1376,7 +1379,7 @@ test("publish-stop exits during websocket wait after stop-handoff removes the ac
   const stop = await runScript("stop-handoff.js", [], { stateDir, mockFile: mockPath, codexThreadId: "codex-thread-1" });
   assert.equal(stop.code, 0);
   assert.equal((await closed), 0);
-  assert.equal(stdout, "");
+  assert.deepEqual(JSON.parse(stdout), {});
   const active = JSON.parse(readFileSync(path.join(stateDir, "active-threads.json"), "utf8"));
   assert.equal(active.threads["codex-thread-1"], undefined);
 });

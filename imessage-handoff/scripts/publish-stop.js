@@ -586,6 +586,14 @@ function stopBlock(reason) {
   };
 }
 
+function stopContinue() {
+  return {};
+}
+
+function emitStopOutput(value) {
+  console.log(JSON.stringify(value));
+}
+
 async function main() {
 try {
   // Codex passes Stop hook context through stdin. If this is not an active handoff
@@ -594,6 +602,7 @@ try {
   const codexThreadId = input.session_id;
   const cwd = input.cwd || process.cwd();
   if (!codexThreadId) {
+    emitStopOutput(stopContinue());
     process.exit(0);
   }
 
@@ -601,11 +610,12 @@ try {
   const active = readActiveThreads();
   const thread = active.threads[codexThreadId];
   if (!thread) {
+    emitStopOutput(stopContinue());
     process.exit(0);
   }
   if (hasQueuedLocalFollowUp(codexThreadId)) {
     await disableHandoffSilently(config, codexThreadId, active);
-    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
+    emitStopOutput(stopBlock(continuationForLocalTakeover()));
     process.exit(0);
   }
 
@@ -638,11 +648,12 @@ try {
 
   const latestActive = readActiveThreads();
   if (!latestActive.threads[codexThreadId]) {
+    emitStopOutput(stopContinue());
     process.exit(0);
   }
   if (hasQueuedLocalFollowUp(codexThreadId)) {
     await disableHandoffSilently(config, codexThreadId, latestActive);
-    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
+    emitStopOutput(stopBlock(continuationForLocalTakeover()));
     process.exit(0);
   }
   latestActive.threads[codexThreadId] = {
@@ -660,15 +671,19 @@ try {
 
   const reply = await waitForReplyWhileActive(config, codexThreadId);
   if (reply && reply.localTakeover) {
-    console.log(JSON.stringify(stopBlock(continuationForLocalTakeover())));
+    emitStopOutput(stopBlock(continuationForLocalTakeover()));
   } else if (reply) {
     // "block" tells Codex to immediately continue with this synthetic user
     // message instead of ending the turn.
     const preparedReply = await prepareReplyForContinuation(codexThreadId, reply);
-    console.log(JSON.stringify(stopBlock(continuationForReply(codexThreadId, preparedReply))));
+    emitStopOutput(stopBlock(continuationForReply(codexThreadId, preparedReply)));
+  } else {
+    emitStopOutput(stopContinue());
   }
 } catch {
-  // Stop hooks should never break normal Codex turns. Fail closed to silence.
+  // Stop hooks should never break normal Codex turns. Return a no-op JSON
+  // object because Stop hook stdout must be valid JSON in current Codex builds.
+  emitStopOutput(stopContinue());
 }
 }
 

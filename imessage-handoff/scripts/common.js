@@ -181,8 +181,9 @@ function imessageHandoffHookStatus(codexHomePath, targetSkillDir) {
 }
 
 function installStopHook(hooksPath, targetSkillDir) {
+  const repaired = repairStopHook(hooksPath, targetSkillDir);
   if (hasImessageHandoffStopHook(hooksPath)) {
-    return false;
+    return repaired;
   }
 
   const root = existsSync(hooksPath) ? readJson(hooksPath) : {};
@@ -205,6 +206,42 @@ function installStopHook(hooksPath, targetSkillDir) {
   return true;
 }
 
+function repairStopHook(hooksPath, targetSkillDir) {
+  if (!existsSync(hooksPath)) {
+    return false;
+  }
+
+  const root = readJson(hooksPath);
+  const hooks = root.hooks && typeof root.hooks === "object" && !Array.isArray(root.hooks) ? root.hooks : {};
+  const groups = Array.isArray(hooks.Stop) ? hooks.Stop : [];
+  let changed = false;
+  const canonicalCommand = handoffStopHookCommand(targetSkillDir);
+
+  for (const group of groups) {
+    if (!group || typeof group !== "object" || !Array.isArray(group.hooks)) {
+      continue;
+    }
+    for (const hook of group.hooks) {
+      if (!hook || typeof hook !== "object") {
+        continue;
+      }
+      if (isWrapperOnlyImessageHandoffStopHook(hook.command)) {
+        hook.command = canonicalCommand;
+        hook.timeout = handoffStopHookTimeoutSeconds;
+        hook.statusMessage = handoffStopHookStatusMessage;
+        hook.silent = true;
+        changed = true;
+      }
+    }
+  }
+
+  if (changed) {
+    root.hooks = hooks;
+    writeJson(hooksPath, root);
+  }
+  return changed;
+}
+
 function isImessageHandoffStopHook(command) {
   if (typeof command !== "string") {
     return false;
@@ -212,6 +249,15 @@ function isImessageHandoffStopHook(command) {
   const normalized = command.replace(/\\/g, "/");
   return normalized.indexOf("/imessage-handoff/scripts/publish-stop.js") !== -1
     || normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1;
+}
+
+function isWrapperOnlyImessageHandoffStopHook(command) {
+  if (typeof command !== "string") {
+    return false;
+  }
+  const normalized = command.replace(/\\/g, "/");
+  return normalized.indexOf("/imessage-handoff/scripts/run-publish-stop.cmd") !== -1
+    && normalized.indexOf("/imessage-handoff/scripts/publish-stop.js") === -1;
 }
 
 function uninstallStopHook(hooksPath) {
